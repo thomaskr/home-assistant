@@ -24,6 +24,7 @@ from homeassistant.const import CONF_NAME, EVENT_THEMES_UPDATED
 from homeassistant.core import callback
 from homeassistant.helpers.translation import async_get_translations
 from homeassistant.loader import bind_hass
+from homeassistant.util.yaml import load_yaml
 
 REQUIREMENTS = ['home-assistant-frontend==20180524.0']
 
@@ -98,6 +99,10 @@ SERVICE_SET_THEME_SCHEMA = vol.Schema({
 WS_TYPE_GET_PANELS = 'get_panels'
 SCHEMA_GET_PANELS = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend({
     vol.Required('type'): WS_TYPE_GET_PANELS,
+})
+WS_TYPE_GET_EXPERIMENTAL_UI = 'frontend/experimental_ui'
+SCHEMA_GET_EXPERIMENTAL_UI = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend({
+    vol.Required('type'): WS_TYPE_GET_EXPERIMENTAL_UI,
 })
 
 
@@ -292,6 +297,9 @@ def async_setup(hass, config):
 
     hass.components.websocket_api.async_register_command(
         WS_TYPE_GET_PANELS, websocket_handle_get_panels, SCHEMA_GET_PANELS)
+    hass.components.websocket_api.async_register_command(
+        WS_TYPE_GET_EXPERIMENTAL_UI, websocket_experimental_config,
+        SCHEMA_GET_EXPERIMENTAL_UI)
     hass.http.register_view(ManifestJSONView)
 
     conf = config.get(DOMAIN, {})
@@ -340,7 +348,8 @@ def async_setup(hass, config):
     yield from asyncio.wait([
         async_register_built_in_panel(hass, panel)
         for panel in ('dev-event', 'dev-info', 'dev-service', 'dev-state',
-                      'dev-template', 'dev-mqtt', 'kiosk')], loop=hass.loop)
+                      'dev-template', 'dev-mqtt', 'kiosk', 'experimental-ui')],
+        loop=hass.loop)
 
     hass.data[DATA_FINALIZE_PANEL] = finalize_panel
 
@@ -600,3 +609,18 @@ def websocket_handle_get_panels(hass, connection, msg):
 
     connection.to_write.put_nowait(websocket_api.result_message(
         msg['id'], panels))
+
+
+@callback
+def websocket_experimental_config(hass, connection, msg):
+    """Send experimental websocket config."""
+    async def send_exp_config():
+        """Send experimental frontend config."""
+        config = await hass.async_add_job(
+            load_yaml, hass.config.path('experimental-ui.yaml'))
+
+        connection.send_message_outside(websocket_api.result_message(
+            msg['id'], config
+        ))
+
+    hass.async_add_job(send_exp_config())
