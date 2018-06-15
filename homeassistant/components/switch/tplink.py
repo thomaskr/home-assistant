@@ -104,6 +104,13 @@ class SmartPlugSwitch(SwitchDevice):
             if self.smartplug.has_emeter:
                 emeter_readings = self.smartplug.get_emeter_realtime()
 
+                # newer versions return W, Wh, mV and mA values instead of
+                # kW, kWh, V and A and have to be converted
+                emeter_readings.update({
+                    k.split('_', 1)[0]: v / 1000.0
+                    for k, v in emeter_readings.items()
+                    if k[-3:] in {'_mv', '_ma', '_mw', '_wh'}})
+
                 self._emeter_params[ATTR_CURRENT_POWER_W] \
                     = "{:.2f}".format(emeter_readings["power"])
                 self._emeter_params[ATTR_TOTAL_ENERGY_KWH] \
@@ -113,7 +120,12 @@ class SmartPlugSwitch(SwitchDevice):
                 self._emeter_params[ATTR_CURRENT_A] \
                     = "{:.2f}".format(emeter_readings["current"])
 
-                emeter_statics = self.smartplug.get_emeter_daily()
+                try:
+                    emeter_statics = self.smartplug.get_emeter_daily()
+                except KeyError:
+                    # newer devices return different keys
+                    self.smartplug.emeter_units = True
+                    emeter_statics = self.smartplug.get_emeter_daily()
                 try:
                     self._emeter_params[ATTR_TODAY_ENERGY_KWH] \
                         = "{:.3f}".format(
